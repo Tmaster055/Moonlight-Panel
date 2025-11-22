@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <title>Moonlight Panel</title>
+  <link rel="icon" href="{{ url_for('static', filename='icon.svg') }}" type="image/svg+xml">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+<div class="container">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h1>🌙 Moonlight Panel</h1>
+    <div>
+      {% if user %}
+        <span class="me-3">Angemeldet als <strong>{{ user }}</strong></span>
+        <a href="/logout" class="btn btn-outline-light me-2">Logout</a>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createModal">+ Server erstellen</button>
+      {% else %}
+        <a href="/login" class="btn btn-primary">Login</a>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if message %}
+  <div class="alert alert-info">{{ message }}</div>
+  {% endif %}
+
+  <h2>Deine Server</h2>
+  {% if servers %}
+    {% for s in servers %}
+    <div class="server-box">
+      <h4 class="d-flex justify-content-between align-items-center">
+        <span>
+          {{ s.name }}
+          <small><i>&nbsp;{{ s.name }}.tmaster055.com</i></small>
+        </span>
+        <div>
+          <button class="btn btn-sm btn-outline-light me-2" data-bs-toggle="modal" data-bs-target="#statsModal" data-server-name="{{ s.name }}" title="Stats">
+            ⚙️
+          </button>
+        </div>
+      </h4>
+      {% if s.running %}
+          <span class="badge bg-success">Läuft</span>
+        {% else %}
+          <span class="badge bg-secondary">Gestoppt</span>
+        {% endif %}
+      </h4>
+      <p>
+        <strong>Typ:</strong> {{ s.server_type }} |
+        <strong>Version:</strong> {{ s.version }} |
+        <strong>Ports:</strong> {{ s.ports }}
+      </p>
+      <form method="POST" action="/action" class="d-inline">
+        <input type="hidden" name="name" value="{{ s.name }}">
+        <button type="submit" name="action" value="start" class="btn btn-success btn-sm" {% if s.running %}disabled{% endif %}>Starten</button>
+        <button type="submit" name="action" value="stop" class="btn btn-danger btn-sm" {% if not s.running %}disabled{% endif %}>Stoppen</button>
+        <button type="submit" name="action" value="restart" class="btn btn-warning btn-sm" {% if not s.running %}disabled{% endif %}>Neustarten</button>
+        <button type="button" class="btn btn-outline-danger btn-sm delete-btn" data-server-name="{{ s.name }}">Löschen</button>
+      </form>
+    </div>
+    {% endfor %}
+  {% else %}
+    <p>Keine Server gefunden.</p>
+  {% endif %}
+</div>
+
+<!-- MODAL: Server erstellen -->
+<div class="modal fade" id="createModal" tabindex="-1" aria-labelledby="createModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content p-3">
+      <div class="modal-header">
+        <h5 class="modal-title" id="createModalLabel">🛠 Neuen Server erstellen</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schließen"></button>
+      </div>
+      <form method="POST" action="/create" class="modal-body">
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label for="name" class="form-label">Name</label>
+            <input type="text" class="form-control" id="name" name="name" required pattern="[A-Za-z0-9_-]+">
+          </div>
+          <div class="col-md-4">
+            <label for="difficulty" class="form-label">Difficulty</label>
+            <select name="difficulty" id="difficulty" class="form-select">
+              <option value="0">Peaceful</option>
+              <option value="1">Easy</option>
+              <option value="2" selected>Normal</option>
+              <option value="3">Hard</option>
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label for="server_type" class="form-label">Server Typ</label>
+            <select name="server_type" id="server_type" class="form-select">
+              <option value="VANILLA">Vanilla</option>
+              <option value="PAPER" selected>Paper</option>
+              <option value="SPIGOT">Spigot</option>
+              <option value="FORGE">Forge</option>
+              <option value="FABRIC">Fabric</option>
+            </select>
+          </div>
+          <div class="col-md-4 d-flex align-items-center">
+            <div class="form-check ms-2">
+              <input class="form-check-input" type="checkbox" value="true" id="bedrock" name="bedrock">
+              <label class="form-check-label" for="bedrock">
+                Bedrock Support (nur Paper)
+              </label>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <label for="version" class="form-label">Version</label>
+            <input type="text" class="form-control" id="version" name="version" value="LATEST">
+          </div>
+          <div class="col-md-6">
+            <label for="ports" class="form-label">Ports (z. B. 25565, 25566)</label>
+            <input type="text" class="form-control" id="ports" name="ports" value="25565" pattern="^(?!.*25575).*"></input>
+          </div>
+        </div>
+        <div class="mt-4 text-end">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
+          <button type="submit" class="btn btn-primary">Erstellen</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+  <script>
+    // Enable bedrock checkbox only when Paper is selected
+    (function(){
+      const serverType = document.getElementById('server_type');
+      const bedrock = document.getElementById('bedrock');
+
+      function updateBedrock() {
+        if (!serverType || !bedrock) return;
+        if (serverType.value === 'PAPER') {
+          bedrock.disabled = false;
+        } else {
+          bedrock.checked = false;
+          bedrock.disabled = true;
+        }
+      }
+
+      serverType.addEventListener('change', updateBedrock);
+      // init
+      updateBedrock();
+    })();
+  </script>
+
+<!-- STATS MODAL (nur Docker-Auslastung) -->
+<div class="modal fade" id="statsModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content p-3">
+      <div class="modal-header">
+        <h5 class="modal-title">Auslastung</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schließen"></button>
+      </div>
+      <div class="modal-body">
+        <div id="statsError" class="text-danger mb-2" style="display:none;"></div>
+        <div class="mb-3">
+          <div class="d-flex justify-content-between mb-1">
+            <div><strong>CPU</strong></div>
+            <div><span id="statsCPUText">-</span></div>
+          </div>
+          <div class="progress" style="height:18px;">
+            <div id="statsCPUBar" class="progress-bar bg-primary" role="progressbar" style="width:0%" aria-valuemin="0" aria-valuemax="100"></div>
+          </div>
+        </div>
+
+        <div>
+          <div class="d-flex justify-content-between mb-1">
+            <div><strong>Memory</strong></div>
+            <div><span id="statsMemText">-</span></div>
+          </div>
+          <div class="progress" style="height:18px;">
+            <div id="statsMemBar" class="progress-bar bg-info" role="progressbar" style="width:0%" aria-valuemin="0" aria-valuemax="100"></div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Schließen</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Helper: parse sizes like '12.34MiB' or '1GiB' -> bytes
+  function parseSizeToBytes(s) {
+    if (!s || typeof s !== 'string') return null;
+    var m = s.trim().match(/^([0-9\.]+)\s*([A-Za-z]+)?$/);
+    if (!m) return null;
+    var v = parseFloat(m[1]);
+    var u = (m[2] || '').toUpperCase();
+    var mul = 1;
+    if (u === 'B' || u === '') mul = 1;
+    else if (u === 'KB' || u === 'KIB' || u === 'K') mul = 1024;
+    else if (u === 'MB' || u === 'MIB' || u === 'M') mul = 1024 * 1024;
+    else if (u === 'GB' || u === 'GIB' || u === 'G') mul = 1024 * 1024 * 1024;
+    else if (u === 'TB' || u === 'TIB' || u === 'T') mul = 1024 * 1024 * 1024 * 1024;
+    else return null;
+    return v * mul;
+  }
+
+  var statsModal = document.getElementById('statsModal');
+  if (statsModal) {
+    var statsInterval = null;
+    var currentServer = null;
+
+    function fetchAndUpdate(serverName) {
+      if (!serverName) return;
+      fetch('/stats/' + encodeURIComponent(serverName))
+        .then(function(resp){ return resp.json().then(function(j){ return {ok: resp.ok, body: j}; }); })
+        .then(function(res){
+          if (!res.ok) {
+            document.getElementById('statsError').style.display = 'block';
+            document.getElementById('statsError').textContent = res.body.error || res.body.message || 'Fehler beim Laden';
+            document.getElementById('statsCPUText').textContent = '-';
+            document.getElementById('statsMemText').textContent = '-';
+            document.getElementById('statsCPUBar').style.width = '0%';
+            document.getElementById('statsMemBar').style.width = '0%';
+            return;
+          }
+
+          document.getElementById('statsError').style.display = 'none';
+          var body = res.body || {};
+
+          // CPU: prefer normalized percent if provided, otherwise fall back to parsing raw
+          var cpuDisplay = '-';
+          var cpuBarPct = 0;
+          if (typeof body.cpu_normalized_pct !== 'undefined' && body.cpu_normalized_pct !== null) {
+            cpuBarPct = Math.min(100, Number(body.cpu_normalized_pct));
+            cpuDisplay = cpuBarPct.toFixed(2) + '%';
+            if (body.cpu_raw) cpuDisplay += ' (' + body.cpu_raw + ')';
+          } else {
+            var cpuStr = (body.cpu_raw || body.cpu || '').toString().trim();
+            var m = cpuStr.match(/([0-9\.]+)\s*%/);
+            if (m) {
+              var rawPct = parseFloat(m[1]);
+              // if rawPct > 100 and num_cpus is available, try to normalize
+              if (rawPct > 100 && body.num_cpus) {
+                cpuBarPct = Math.min(100, rawPct / Number(body.num_cpus));
+                cpuDisplay = cpuBarPct.toFixed(2) + '% (' + cpuStr + ')';
+              } else {
+                cpuBarPct = Math.min(100, rawPct);
+                cpuDisplay = cpuBarPct.toFixed(2) + '%';
+              }
+            } else if (cpuStr) {
+              cpuDisplay = cpuStr;
+            }
+          }
+          document.getElementById('statsCPUText').textContent = cpuDisplay;
+          document.getElementById('statsCPUBar').style.width = cpuBarPct + '%';
+
+          if (body.mem_used && body.mem_total) {
+            var usedBytes = parseSizeToBytes(body.mem_used);
+            var totalBytes = parseSizeToBytes(body.mem_total);
+            if (usedBytes !== null && totalBytes !== null && totalBytes > 0) {
+              var pct = (usedBytes / totalBytes) * 100;
+              document.getElementById('statsMemText').textContent = body.mem_used + ' / ' + body.mem_total + ' (' + pct.toFixed(1) + '%)';
+              document.getElementById('statsMemBar').style.width = Math.min(100, pct) + '%';
+            } else {
+              document.getElementById('statsMemText').textContent = body.mem || (body.mem_used + ' / ' + body.mem_total) || '-';
+              document.getElementById('statsMemBar').style.width = '0%';
+            }
+          } else if (body.mem) {
+            document.getElementById('statsMemText').textContent = body.mem;
+            document.getElementById('statsMemBar').style.width = '0%';
+          } else {
+            document.getElementById('statsMemText').textContent = '-';
+            document.getElementById('statsMemBar').style.width = '0%';
+          }
+        })
+        .catch(function(err){
+          document.getElementById('statsError').style.display = 'block';
+          document.getElementById('statsError').textContent = err.message || String(err);
+          document.getElementById('statsCPUText').textContent = '-';
+          document.getElementById('statsMemText').textContent = '-';
+          document.getElementById('statsCPUBar').style.width = '0%';
+          document.getElementById('statsMemBar').style.width = '0%';
+        });
+    }
+
+    statsModal.addEventListener('show.bs.modal', function (event) {
+      var button = event.relatedTarget;
+      currentServer = button.getAttribute('data-server-name');
+
+      // reset display
+      document.getElementById('statsError').style.display = 'none';
+      document.getElementById('statsCPUText').textContent = 'Lade...';
+      document.getElementById('statsCPUBar').style.width = '0%';
+      document.getElementById('statsMemText').textContent = 'Lade...';
+      document.getElementById('statsMemBar').style.width = '0%';
+
+      // initial fetch
+      fetchAndUpdate(currentServer);
+
+      // start interval
+      statsInterval = setInterval(function(){ fetchAndUpdate(currentServer); }, 2000);
+    });
+
+    statsModal.addEventListener('hide.bs.modal', function () {
+      // stop interval
+      if (statsInterval) {
+        clearInterval(statsInterval);
+        statsInterval = null;
+      }
+      currentServer = null;
+    });
+  }
+</script>
+
+<!-- DELETE CONFIRMATION MODAL -->
+<div class="modal fade" id="deleteConfirmModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content p-3">
+      <div class="modal-header">
+        <h5 class="modal-title">Server löschen</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schließen"></button>
+      </div>
+      <div class="modal-body">
+        <p id="deleteMessage">Möchtest du den Server <strong id="deleteServerName">?</strong> wirklich löschen?</p>
+        <div class="alert alert-warning">ACHTUNG: Dieser Vorgang kann nicht rückgängig gemacht werden.</div>
+        <p>Bestätige das Löschen in <span id="deleteCountdown">5</span> Sekunden.</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
+        <form id="deleteForm" method="POST" action="/action" style="display:inline; margin:0;">
+          <input type="hidden" name="name" id="deleteFormName" value="">
+          <input type="hidden" name="action" value="delete">
+          <button type="submit" id="deleteConfirmButton" class="btn btn-danger" disabled>Löschen</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function(){
+    let countdownInterval = null;
+    const modalEl = document.getElementById('deleteConfirmModal');
+    const bsModal = new bootstrap.Modal(modalEl);
+    const serverNameEl = document.getElementById('deleteServerName');
+    const countdownEl = document.getElementById('deleteCountdown');
+    const deleteFormName = document.getElementById('deleteFormName');
+    const confirmBtn = document.getElementById('deleteConfirmButton');
+
+    function startCountdown(seconds) {
+      let remaining = seconds;
+      countdownEl.textContent = remaining;
+      confirmBtn.disabled = true;
+      if (countdownInterval) clearInterval(countdownInterval);
+      countdownInterval = setInterval(() => {
+        remaining -= 1;
+        countdownEl.textContent = remaining;
+        if (remaining <= 0) {
+          clearInterval(countdownInterval);
+          confirmBtn.disabled = false;
+          countdownEl.textContent = '0';
+        }
+      }, 1000);
+    }
+
+    // Attach click handlers to all delete buttons
+    document.querySelectorAll('.delete-btn').forEach(btn => {
+      btn.addEventListener('click', function(e){
+        const name = this.getAttribute('data-server-name');
+        serverNameEl.textContent = name;
+        deleteFormName.value = name;
+        bsModal.show();
+        startCountdown(5); // 5 second countdown
+      });
+    });
+
+    // If modal hidden, clear interval and reset
+    modalEl.addEventListener('hidden.bs.modal', function(){
+      if (countdownInterval) clearInterval(countdownInterval);
+      countdownEl.textContent = '5';
+      confirmBtn.disabled = true;
+    });
+  })();
+</script>
+</body>
+</html>
