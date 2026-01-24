@@ -3,6 +3,7 @@ import subprocess
 import os
 import shutil
 import re
+import yaml
 import json
 from dotenv import load_dotenv
 from functools import wraps
@@ -46,72 +47,85 @@ def login_required(f):
     return decorated
 
 # --- Backend Logik ---
-def create_compose_yaml(name, difficulty, server_type, ports, version, bedrock=False):
+def create_compose_yaml(name, difficulty, server_type, ports, version, bedrock=False,
+                        max_players=20, enable_whitelist=True, enable_pvp=True, allow_flight=False,
+                        view_distance=20, memory=8192, motd=None,
+                        spawn_monsters=True, spawn_animals=True):
     port_list = [p.strip() for p in ports.split(",") if p.strip()]
-    ports_yaml = "\n      - ".join(port_list)
-    if ports_yaml:
-        ports_yaml = "      - " + ports_yaml
-    else:
-        ports_yaml = "      - " + '"25565:25565"'
+    if not port_list:
+        port_list = ["25565:25565"]
+    port_list.append("25575:25575")
 
-    server_port = port_list[0].split(":")[0] if port_list else "25565"    
+    server_port = port_list[0].split(":")[0]
 
-    # Build plugins block outside the f-string to avoid backslashes inside f-string expressions
-    plugins_block = ""
-    if bedrock and server_type == 'PAPER':
-        plugins_block = (
-            "      PLUGINS: |\n"
-            "        https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/spigot\n"
-            "        https://download.geysermc.org/v2/projects/floodgate/versions/latest/builds/latest/downloads/spigot\n"
+    environment = {
+        "EULA": "TRUE",
+        "SERVER_PORT": server_port,
+        "RCON_CMDS_STARTUP": "gamerule playersSleepingPercentage 0",
+        "VIEW_DISTANCE": str(view_distance),
+        "MOTD": motd or os.environ.get("SERVER_MOTD"),
+        "ICON": os.environ.get("SERVER_ICON"),
+        "ENABLE_WHITELIST": "true" if enable_whitelist else "false",
+        "TYPE": server_type,
+        "VERSION": version,
+        "MEMORY": f"{memory}M",
+        "TZ": "Europe/Vienna",
+        "DIFFICULTY": difficulty,
+        "ENABLE_RCON": "true",
+        "RCON_PASSWORD": "123",
+        "RCON_PORT": "25575",
+        "MAX_PLAYERS": str(max_players),
+        "PVP": "true" if enable_pvp else "false",
+        "ALLOW_FLIGHT": "true" if allow_flight else "false",
+        "SPAWN_MONSTERS": "true" if spawn_monsters else "false",
+        "SPAWN_ANIMALS": "true" if spawn_animals else "false"
+    }
+
+    # Always use OPS from .env if available
+    ops_list = os.environ.get("OPS")
+    if ops_list:
+        environment["OPS"] = ops_list
+
+    if bedrock and server_type.upper() == "PAPER":
+        environment["PLUGINS"] = (
+            "https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/spigot\n"
+            "https://download.geysermc.org/v2/projects/floodgate/versions/latest/builds/latest/downloads/spigot"
         )
 
-    return f"""
-version: "3.8"
-services:
-  mc:
-    image: itzg/minecraft-server:latest
-    container_name: mc_{name}
-    tty: true
-    stdin_open: true
-    restart: unless-stopped
-    ports:
-{ports_yaml}
-      - 25575:25575
-    environment:
-      EULA: "TRUE"
-      SERVER_PORT: f"{server_port}"
-      RCON_CMDS_STARTUP: |-
-        gamerule playersSleepingPercentage 0
-      VIEW_DISTANCE: "20"
-      MOTD: f'"{os.getenv("CLOUDFLARE_ZONE_ID")}"'
-      ICON: f'"{os.getenv("CLOUDFLARE_ZONE_ID")}"'
-      ENABLE_WHITELIST: "true"
-{plugins_block}
-      TYPE: "{server_type}"
-      VERSION: "{version}"
-      MEMORY: "6144M"
-      TZ: "Europe/Vienna"
-      DIFFICULTY: "{difficulty}"
-      ENABLE_RCON: "true"
-      RCON_PASSWORD: "123"
-      RCON_PORT: "25575"
-    volumes:
-      - "./data/{name}:/data"
-  backups:
-    image: itzg/mc-backup
-    depends_on:
-      - mc
-    environment:
-      BACKUP_INTERVAL: "12h"
-      RCON_HOST: mc
-      RCON_PORT: "25575"
-      RCON_PASSWORD: "123"
-      PAUSE_IF_PLAYERS_ONLINE: "true"
-      INITIAL_DELAY: 0
-    volumes:
-      - ./data/{name}:/data:ro
-      - ./data/mc-backups:/backups
-""".strip()
+    compose_dict = {
+        "version": "3.8",
+        "services": {
+            "mc": {
+                "image": "itzg/minecraft-server:latest",
+                "container_name": f"mc_{name}",
+                "tty": True,
+                "stdin_open": True,
+                "restart": "unless-stopped",
+                "ports": port_list,
+                "environment": environment,
+                "volumes": [f"./data/{name}:/data"]
+            },
+            "backups": {
+                "image": "itzg/mc-backup",
+                "depends_on": ["mc"],
+                "environment": {
+                    "BACKUP_INTERVAL": "12h",
+                    "RCON_HOST": "mc",
+                    "RCON_PORT": "25575",
+                    "RCON_PASSWORD": "123",
+                    "PAUSE_IF_PLAYERS_ONLINE": "true",
+                    "INITIAL_DELAY": 0
+                },
+                "volumes": [
+                    f"./data/{name}:/data:ro",
+                    "./data/mc-backups:/backups"
+                ]
+            }
+        }
+    }
+
+    return compose_dict
+
 
 def run_compose(name, command):
     server_dir = os.path.join(BASE_DIR, name)
@@ -123,10 +137,28 @@ def run_compose(name, command):
 def server_exists(name):
     return os.path.exists(os.path.join(BASE_DIR, name, "docker-compose.yml"))
 
-def save_server_info(name, difficulty, server_type, ports, version, bedrock=False):
+
+def save_server_info(name, difficulty, server_type, ports, version, bedrock=False,
+                     max_players=20, enable_whitelist=True, enable_pvp=True, allow_flight=False,
+                     view_distance=20, memory=8192, motd=None,
+                     spawn_monsters=True, spawn_animals=True):
     path = os.path.join(BASE_DIR, name, "server.info")
     with open(path, "w", encoding="utf-8") as f:
-        f.write(f"difficulty: {difficulty}\nserver_type: {server_type}\nports: {ports}\nversion: {version}\nbedrock: {str(bool(bedrock))}\n")
+        f.write(f"difficulty: {difficulty}\n")
+        f.write(f"server_type: {server_type}\n")
+        f.write(f"ports: {ports}\n")
+        f.write(f"version: {version}\n")
+        f.write(f"bedrock: {str(bool(bedrock))}\n")
+        f.write(f"max_players: {max_players}\n")
+        f.write(f"enable_whitelist: {str(bool(enable_whitelist))}\n")
+        f.write(f"enable_pvp: {str(bool(enable_pvp))}\n")
+        f.write(f"allow_flight: {str(bool(allow_flight))}\n")
+        f.write(f"view_distance: {view_distance}\n")
+        f.write(f"memory: {memory}\n")
+        f.write(f"motd: {motd or ''}\n")
+        f.write(f"spawn_monsters: {str(bool(spawn_monsters))}\n")
+        f.write(f"spawn_animals: {str(bool(spawn_animals))}\n")
+
 
 def get_server_info(name):
     path = os.path.join(BASE_DIR, name, "server.info")
@@ -257,6 +289,15 @@ def create_server():
     version = request.form["version"]
     raw_ports = request.form["ports"]
     bedrock = request.form.get('bedrock') == 'true'
+    max_players = int(request.form.get("max_players", 20))
+    enable_whitelist = request.form.get('enable_whitelist') == 'on'
+    enable_pvp = request.form.get('enable_pvp') == 'on'
+    allow_flight = request.form.get('allow_flight') == 'on'
+    view_distance = int(request.form.get("view_distance", 20))
+    memory = int(request.form.get("memory", 8192))
+    motd = request.form.get("motd", "")
+    spawn_monsters = request.form.get('spawn_monsters') == 'on'
+    spawn_animals = request.form.get('spawn_animals') == 'on'
 
     # Prüfen, ob schon ein Server läuft
     running_servers = [s for s in list_servers() if s["running"]]
@@ -295,10 +336,18 @@ def create_server():
     server_dir = os.path.join(BASE_DIR, name)
     os.makedirs(server_dir, exist_ok=True)
 
-    with open(os.path.join(server_dir, "docker-compose.yml"), "w", encoding="utf-8") as f:
-        f.write(create_compose_yaml(name, difficulty, server_type, ports, version, bedrock=bedrock))
+    with open(os.path.join(server_dir, "docker-compose.yml"), "w") as f:
+        yaml.dump(create_compose_yaml(name, difficulty, server_type, ports, version, bedrock=bedrock,
+                                      max_players=max_players, enable_whitelist=enable_whitelist,
+                                      enable_pvp=enable_pvp, allow_flight=allow_flight,
+                                      view_distance=view_distance, memory=memory, motd=motd,
+                                      spawn_monsters=spawn_monsters, spawn_animals=spawn_animals), f, sort_keys=False)
 
-    save_server_info(name, difficulty, server_type, ports, version, bedrock=bedrock)
+    save_server_info(name, difficulty, server_type, ports, version, bedrock=bedrock,
+                     max_players=max_players, enable_whitelist=enable_whitelist,
+                     enable_pvp=enable_pvp, allow_flight=allow_flight,
+                     view_distance=view_distance, memory=memory, motd=motd,
+                     spawn_monsters=spawn_monsters, spawn_animals=spawn_animals)
 
     try:
         run_compose(name, ["up", "-d"])

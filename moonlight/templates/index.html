@@ -75,48 +75,138 @@
         <h5 class="modal-title" id="createModalLabel">🛠 Neuen Server erstellen</h5>
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schließen"></button>
       </div>
-      <form method="POST" action="/create" class="modal-body">
-        <div class="row g-3">
-          <div class="col-md-4">
-            <label for="name" class="form-label">Name</label>
-            <input type="text" class="form-control" id="name" name="name" required pattern="[A-Za-z0-9_-]+">
-          </div>
-          <div class="col-md-4">
-            <label for="difficulty" class="form-label">Difficulty</label>
-            <select name="difficulty" id="difficulty" class="form-select">
-              <option value="0">Peaceful</option>
-              <option value="1">Easy</option>
-              <option value="2" selected>Normal</option>
-              <option value="3">Hard</option>
-            </select>
-          </div>
-          <div class="col-md-4">
-            <label for="server_type" class="form-label">Server Typ</label>
-            <select name="server_type" id="server_type" class="form-select">
-              <option value="VANILLA">Vanilla</option>
-              <option value="PAPER" selected>Paper</option>
-              <option value="SPIGOT">Spigot</option>
-              <option value="FORGE">Forge</option>
-              <option value="FABRIC">Fabric</option>
-            </select>
-          </div>
-          <div class="col-md-4 d-flex align-items-center">
-            <div class="form-check ms-2">
-              <input class="form-check-input" type="checkbox" value="true" id="bedrock" name="bedrock">
-              <label class="form-check-label" for="bedrock">
-                Bedrock Support (nur Paper)
-              </label>
+      <form method="POST" action="/create">
+        <!-- Tab Navigation -->
+        <ul class="nav nav-tabs mb-3" id="createTabs" role="tablist" style="border-bottom: 2px solid #444;">
+          <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="basic-tab" data-bs-toggle="tab" data-bs-target="#basic" type="button" role="tab" aria-controls="basic" aria-selected="true">Basis</button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="game-tab" data-bs-toggle="tab" data-bs-target="#game" type="button" role="tab" aria-controls="game" aria-selected="false">Spiel</button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="advanced-tab" data-bs-toggle="tab" data-bs-target="#advanced" type="button" role="tab" aria-controls="advanced" aria-selected="false">Erweitert</button>
+          </li>
+        </ul>
+
+        <!-- Tab Content -->
+        <div class="tab-content modal-body" id="createTabContent">
+          <!-- Basic Tab -->
+          <div class="tab-pane fade show active" id="basic" role="tabpanel" aria-labelledby="basic-tab">
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label for="name" class="form-label">Server Name <span class="text-danger">*</span></label>
+                <input type="text" class="form-control" id="name" name="name" required pattern="[A-Za-z0-9_-]+" placeholder="z.B. mein-server">
+                <small class="form-text text-muted">Nur Buchstaben, Zahlen, - und _</small>
+              </div>
+              <div class="col-md-6">
+                <label for="version" class="form-label">Version <span class="text-danger">*</span></label>
+                <input type="text" class="form-control" id="version" name="version" value="LATEST" placeholder="LATEST oder 1.21.8">
+              </div>
+              <div class="col-md-6">
+                <label for="server_type" class="form-label">Server Typ <span class="text-danger">*</span></label>
+                <select name="server_type" id="server_type" class="form-select">
+                  <option value="VANILLA">Vanilla</option>
+                  <option value="PAPER" selected>Paper</option>
+                  <option value="SPIGOT">Spigot</option>
+                  <option value="FORGE">Forge</option>
+                  <option value="FABRIC">Fabric</option>
+                </select>
+              </div>
+              <div class="col-md-6">
+                <label for="ports" class="form-label">Ports <span class="text-danger">*</span></label>
+                <input type="text" class="form-control" id="ports" name="ports" value="25565" pattern="^(?!.*25575).*" placeholder="25565, 25566">
+                <small class="form-text text-muted">Komma-getrennte Liste</small>
+              </div>
+              <div class="col-md-6 d-flex align-items-center">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" value="true" id="bedrock" name="bedrock">
+                  <label class="form-check-label" for="bedrock">
+                    Bedrock Support (nur Paper)
+                  </label>
+                </div>
+              </div>
             </div>
           </div>
-          <div class="col-md-6">
-            <label for="version" class="form-label">Version</label>
-            <input type="text" class="form-control" id="version" name="version" value="LATEST">
+
+          <!-- Game Settings Tab -->
+          <div class="tab-pane fade" id="game" role="tabpanel" aria-labelledby="game-tab">
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label for="difficulty" class="form-label">Schwierigkeitsgrad</label>
+                <select name="difficulty" id="difficulty" class="form-select">
+                  <option value="0">Friedlich</option>
+                  <option value="1">Leicht</option>
+                  <option value="2" selected>Normal</option>
+                  <option value="3">Schwer</option>
+                </select>
+              </div>
+              <div class="col-md-6">
+                <label for="max_players" class="form-label">Max. Spieler</label>
+                <input type="number" class="form-control" id="max_players" name="max_players" value="20" min="1" max="100">
+              </div>
+              <div class="col-md-6 d-flex align-items-center">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" id="enable_whitelist" name="enable_whitelist" checked>
+                  <label class="form-check-label" for="enable_whitelist">
+                    Whitelist aktivieren
+                  </label>
+                </div>
+              </div>
+              <div class="col-md-6 d-flex align-items-center">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" id="enable_pvp" name="enable_pvp" checked>
+                  <label class="form-check-label" for="enable_pvp">
+                    PvP aktivieren
+                  </label>
+                </div>
+              </div>
+              <div class="col-md-12 d-flex align-items-center">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" id="allow_flight" name="allow_flight">
+                  <label class="form-check-label" for="allow_flight">
+                    Flugmodus erlauben
+                  </label>
+                </div>
+              </div>
+            </div>
           </div>
-          <div class="col-md-6">
-            <label for="ports" class="form-label">Ports (z. B. 25565, 25566)</label>
-            <input type="text" class="form-control" id="ports" name="ports" value="25565" pattern="^(?!.*25575).*"></input>
+
+          <!-- Advanced Settings Tab -->
+          <div class="tab-pane fade" id="advanced" role="tabpanel" aria-labelledby="advanced-tab">
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label for="view_distance" class="form-label">Sichtweite (Chunks)</label>
+                <input type="number" class="form-control" id="view_distance" name="view_distance" value="20" min="5" max="32">
+              </div>
+              <div class="col-md-6">
+                <label for="memory" class="form-label">RAM (MB)</label>
+                <input type="number" class="form-control" id="memory" name="memory" value="8192" min="1024" step="512">
+              </div>
+              <div class="col-md-12">
+                <label for="motd" class="form-label">MOTD (Server Nachricht)</label>
+                <input type="text" class="form-control" id="motd" name="motd" placeholder="Willkommen auf meinem Server!">
+              </div>
+              <div class="col-md-6 d-flex align-items-center">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" id="spawn_monsters" name="spawn_monsters" checked>
+                  <label class="form-check-label" for="spawn_monsters">
+                    Monster spawnen
+                  </label>
+                </div>
+              </div>
+              <div class="col-md-6 d-flex align-items-center">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" id="spawn_animals" name="spawn_animals" checked>
+                  <label class="form-check-label" for="spawn_animals">
+                    Tiere spawnen
+                  </label>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
+
         <div class="mt-4 text-end">
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
           <button type="submit" class="btn btn-primary">Erstellen</button>

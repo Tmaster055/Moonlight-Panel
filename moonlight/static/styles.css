@@ -41,3 +41,7 @@ h1, h2 {
   box-shadow: 0 0 10px #6c3fff;
   border-color: #6c3fff;
 }
+.form-control::placeholder {
+  color: #fff !important;
+  opacity: 0.7;
+}
