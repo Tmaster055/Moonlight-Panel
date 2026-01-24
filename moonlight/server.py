@@ -109,7 +109,8 @@ def create_compose_yaml(name, difficulty, server_type, ports, version, bedrock=F
                 "image": "itzg/mc-backup",
                 "depends_on": ["mc"],
                 "environment": {
-                    "BACKUP_INTERVAL": "12h",
+                    "BACKUP_INTERVAL": "48h",
+                    "BACKUP_RETENTION_DAYS": "6",
                     "RCON_HOST": "mc",
                     "RCON_PORT": "25575",
                     "RCON_PASSWORD": "123",
