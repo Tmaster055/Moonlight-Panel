@@ -108,6 +108,7 @@
                 <select name="server_type" id="server_type" class="form-select">
                   <option value="VANILLA">Vanilla</option>
                   <option value="PAPER" selected>Paper</option>
+                  <option value="FOLIA">Folia</option>
                   <option value="SPIGOT">Spigot</option>
                   <option value="FORGE">Forge</option>
                   <option value="FABRIC">Fabric</option>
@@ -122,7 +123,7 @@
                 <div class="form-check">
                   <input class="form-check-input" type="checkbox" value="true" id="bedrock" name="bedrock">
                   <label class="form-check-label" for="bedrock">
-                    Bedrock Support (nur Paper)
+                    Bedrock Support (nur Paper/Folia)
                   </label>
                 </div>
               </div>
@@ -217,14 +218,14 @@
 </div>
 
   <script>
-    // Enable bedrock checkbox only when Paper is selected
+    // Enable bedrock checkbox only when Paper or Folia is selected
     (function(){
       const serverType = document.getElementById('server_type');
       const bedrock = document.getElementById('bedrock');
 
       function updateBedrock() {
         if (!serverType || !bedrock) return;
-        if (serverType.value === 'PAPER') {
+        if (serverType.value === 'PAPER' || serverType.value === 'FOLIA') {
           bedrock.disabled = false;
         } else {
           bedrock.checked = false;

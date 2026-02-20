@@ -45,3 +45,76 @@ h1, h2 {
   color: #fff !important;
   opacity: 0.7;
 }
+
+/* Create Server modal contrast tuning */
+#createModal .modal-content {
+  background: linear-gradient(180deg, #2d1f45 0%, #261a3a 100%);
+  border: 1px solid #7a5af8;
+}
+
+#createModal .modal-header {
+  border-bottom: 1px solid #4b3772;
+}
+
+#createModal .modal-footer {
+  border-top: 1px solid #4b3772;
+}
+
+#createModal .nav-tabs {
+  border-bottom: 1px solid #5d468a !important;
+}
+
+#createModal .nav-tabs .nav-link {
+  color: #d7c9f6;
+  border: 1px solid transparent;
+}
+
+#createModal .nav-tabs .nav-link:hover {
+  color: #f4ecff;
+  border-color: #5d468a;
+  background-color: #33244e;
+}
+
+#createModal .nav-tabs .nav-link.active {
+  color: #ffffff;
+  background-color: #3a2758;
+  border-color: #8d72f2 #8d72f2 #3a2758;
+}
+
+#createModal .form-label,
+#createModal .form-check-label {
+  color: #f3ebff;
+}
+
+#createModal .text-muted,
+#createModal .form-text {
+  color: #ccbce8 !important;
+}
+
+#createModal .form-control,
+#createModal .form-select {
+  background-color: #2f2147;
+  color: #f5efff;
+  border: 1px solid #7b60cf;
+}
+
+#createModal .form-control::placeholder {
+  color: #ccbce8 !important;
+  opacity: 0.95;
+}
+
+#createModal .form-control:focus,
+#createModal .form-select:focus {
+  border-color: #a389ff;
+  box-shadow: 0 0 0 0.2rem rgba(163, 137, 255, 0.35);
+}
+
+#createModal .form-check-input {
+  background-color: #2f2147;
+  border-color: #7b60cf;
+}
+
+#createModal .form-check-input:checked {
+  background-color: #7a5af8;
+  border-color: #7a5af8;
+}

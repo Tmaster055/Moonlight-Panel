@@ -86,7 +86,7 @@ def create_compose_yaml(name, difficulty, server_type, ports, version, bedrock=F
     if ops_list:
         environment["OPS"] = ops_list
 
-    if bedrock and server_type.upper() == "PAPER":
+    if bedrock and server_type.upper() in ("PAPER", "FOLIA"):
         environment["PLUGINS"] = (
             "https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/spigot\n"
             "https://download.geysermc.org/v2/projects/floodgate/versions/latest/builds/latest/downloads/spigot"
@@ -309,8 +309,8 @@ def create_server():
         return redirect(url_for("index", message=f"Server '{name}' existiert bereits."))
 
     mapped_ports = [f"{p}:{p}" for p in raw_ports.split(",") if p.strip()]
-    # If bedrock support is requested for PAPER, add the UDP port mapping for Bedrock (19132)
-    if bedrock and server_type == 'PAPER':
+    # If bedrock support is requested for PAPER/FOLIA, add the UDP port mapping for Bedrock (19132)
+    if bedrock and server_type in ('PAPER', 'FOLIA'):
         # ensure we don't duplicate if user already included it
         if not any('19132' in p for p in mapped_ports):
             mapped_ports.append('19132:19132/udp')
