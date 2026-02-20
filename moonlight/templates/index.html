@@ -115,11 +115,17 @@
                 </select>
               </div>
               <div class="col-md-6">
-                <label for="ports" class="form-label">Ports <span class="text-danger">*</span></label>
-                <input type="text" class="form-control" id="ports" name="ports" value="25565" pattern="^(?!.*25575).*" placeholder="25565, 25566">
-                <small class="form-text text-muted">Komma-getrennte Liste</small>
+                <label for="port" class="form-label">MC Port <span class="text-danger">*</span></label>
+                <input type="number" class="form-control" id="port" name="port" value="25565" min="1024" max="65535" placeholder="25565" disabled>
+                <small class="form-text text-muted">Nur Minecraft-Port (RCON/Bedrock werden automatisch behandelt)</small>
               </div>
               <div class="col-md-6 d-flex align-items-center">
+                <div class="form-check me-4">
+                  <input class="form-check-input" type="checkbox" id="auto_port" name="auto_port" checked>
+                  <label class="form-check-label" for="auto_port">
+                    Auto Port (ab 25565)
+                  </label>
+                </div>
                 <div class="form-check">
                   <input class="form-check-input" type="checkbox" value="true" id="bedrock" name="bedrock">
                   <label class="form-check-label" for="bedrock">
@@ -222,6 +228,8 @@
     (function(){
       const serverType = document.getElementById('server_type');
       const bedrock = document.getElementById('bedrock');
+      const autoPort = document.getElementById('auto_port');
+      const port = document.getElementById('port');
 
       function updateBedrock() {
         if (!serverType || !bedrock) return;
@@ -233,9 +241,19 @@
         }
       }
 
+      function updatePortMode() {
+        if (!autoPort || !port) return;
+        port.disabled = autoPort.checked;
+        if (autoPort.checked) {
+          port.value = '25565';
+        }
+      }
+
       serverType.addEventListener('change', updateBedrock);
+      autoPort.addEventListener('change', updatePortMode);
       // init
       updateBedrock();
+      updatePortMode();
     })();
   </script>
 

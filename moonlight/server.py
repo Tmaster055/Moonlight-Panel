@@ -54,7 +54,8 @@ def create_compose_yaml(name, difficulty, server_type, ports, version, bedrock=F
     port_list = [p.strip() for p in ports.split(",") if p.strip()]
     if not port_list:
         port_list = ["25565:25565"]
-    port_list.append("25575:25575")
+    if not any(p.startswith("25575:") for p in port_list):
+        port_list.append("25575:25575")
 
     server_port = port_list[0].split(":")[0]
 
@@ -172,6 +173,48 @@ def get_server_info(name):
                 info[k.strip()] = v.strip()
     return info
 
+def _extract_host_port(mapping):
+    """Extract host port from mappings like '25565:25565' or '25565:25565/udp'."""
+    if not mapping:
+        return None
+    first = mapping.split(":", 1)[0].strip().strip('"')
+    try:
+        return int(first)
+    except ValueError:
+        return None
+
+def _parse_port_mappings(ports_str):
+    """Parse stored port mappings from server.info into a clean list."""
+    if not ports_str:
+        return []
+    return [p.strip() for p in ports_str.split(",") if p.strip()]
+
+def used_mc_ports():
+    """Return used Minecraft host ports, excluding reserved RCON/Bedrock ports."""
+    used = set()
+    for server in list_servers():
+        for mapping in _parse_port_mappings(server.get("ports", "")):
+            # Skip bedrock mappings and any UDP mapping
+            if "/udp" in mapping.lower():
+                continue
+            port = _extract_host_port(mapping)
+            if port is None:
+                continue
+            # Ignore reserved non-MC ports
+            if port in (25575, 19132):
+                continue
+            used.add(port)
+    return used
+
+def next_available_mc_port(start=25565):
+    used = used_mc_ports()
+    port = start
+    while port <= 65535:
+        if port not in used:
+            return port
+        port += 1
+    return None
+
 def is_running(name):
     c = f"mc_{name}"
     result = subprocess.run(["docker", "ps", "--filter", f"name=^{c}$", "--format", "{{.Names}}"], capture_output=True, text=True)
@@ -288,7 +331,8 @@ def create_server():
     difficulty = request.form["difficulty"]
     server_type = request.form["server_type"]
     version = request.form["version"]
-    raw_ports = request.form["ports"]
+    raw_port = request.form.get("port", "25565").strip()
+    auto_port = request.form.get("auto_port") == "on"
     bedrock = request.form.get('bedrock') == 'true'
     max_players = int(request.form.get("max_players", 20))
     enable_whitelist = request.form.get('enable_whitelist') == 'on'
@@ -308,12 +352,25 @@ def create_server():
     if server_exists(name):
         return redirect(url_for("index", message=f"Server '{name}' existiert bereits."))
 
-    mapped_ports = [f"{p}:{p}" for p in raw_ports.split(",") if p.strip()]
+    if auto_port:
+        chosen_mc_port = next_available_mc_port(start=25565)
+        if chosen_mc_port is None:
+            return redirect(url_for("index", message="Fehler: Kein freier Minecraft-Port zwischen 25565 und 65535 gefunden."))
+    else:
+        try:
+            chosen_mc_port = int(raw_port)
+        except ValueError:
+            return redirect(url_for("index", message="Fehler: UngÃ¼ltiger Port. Bitte gib eine Zahl ein."))
+        if chosen_mc_port < 1024 or chosen_mc_port > 65535:
+            return redirect(url_for("index", message="Fehler: Port muss zwischen 1024 und 65535 liegen."))
+        if chosen_mc_port in used_mc_ports():
+            return redirect(url_for("index", message=f"Fehler: Port {chosen_mc_port} wird bereits von einem anderen Server verwendet."))
+
+    mapped_ports = [f"{chosen_mc_port}:{chosen_mc_port}"]
     # If bedrock support is requested for PAPER/FOLIA, add the UDP port mapping for Bedrock (19132)
     if bedrock and server_type in ('PAPER', 'FOLIA'):
-        # ensure we don't duplicate if user already included it
-        if not any('19132' in p for p in mapped_ports):
-            mapped_ports.append('19132:19132/udp')
+        mapped_ports.append('19132:19132/udp')
+    mapped_ports.append('25575:25575')
     ports = ",".join(mapped_ports)
 
     # Determine SRV port: choose the first TCP host port mapping (skip /udp mappings)
@@ -331,8 +388,7 @@ def create_server():
             except ValueError:
                 continue
     if srv_port is None:
-        # fallback to standard Minecraft port
-        srv_port = 25565
+        srv_port = chosen_mc_port
 
     server_dir = os.path.join(BASE_DIR, name)
     os.makedirs(server_dir, exist_ok=True)
