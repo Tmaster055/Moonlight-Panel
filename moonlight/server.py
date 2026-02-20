@@ -62,7 +62,7 @@ def create_compose_yaml(name, difficulty, server_type, ports, version, bedrock=F
     environment = {
         "EULA": "TRUE",
         "SERVER_PORT": server_port,
-        "RCON_CMDS_STARTUP": "gamerule playersSleepingPercentage 0",
+        "RCON_CMDS_STARTUP": "gamerule players_sleeping_percentage 0",
         "VIEW_DISTANCE": str(view_distance),
         "MOTD": motd or os.environ.get("SERVER_MOTD"),
         "ICON": os.environ.get("SERVER_ICON"),
