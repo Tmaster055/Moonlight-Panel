@@ -2,9 +2,9 @@ from flask import Flask, render_template, request, redirect, url_for, jsonify, s
 import subprocess
 import os
 import shutil
-import re
 import yaml
 import json
+import psutil
 from dotenv import load_dotenv
 from functools import wraps
 from cloudflare_helper import create_srv_record, delete_srv_record
@@ -220,70 +220,38 @@ def is_running(name):
     result = subprocess.run(["docker", "ps", "--filter", f"name=^{c}$", "--format", "{{.Names}}"], capture_output=True, text=True)
     return bool(result.stdout.strip())
 
-@app.route('/stats/<name>')
-def stats(name):
-    """Return basic CPU and memory usage for the container as JSON.
-
-    Uses `docker stats --no-stream --format` if available; falls back to parsing `docker stats --no-stream` output.
-    """
-    container_name = f"mc_{name}"
-
-    # Check container exists
-    if not is_running(name):
-        return jsonify({"error": "container_not_running"}), 404
-
+@app.route('/system-stats')
+@login_required
+def system_stats():
+    """Return host utilization (per-core CPU, RAM, and storage)."""
     try:
-        # Try using a formatted output for easier parsing
-        fmt = "{{.Name}}|{{.CPUPerc}}|{{.MemUsage}}"
-        proc = subprocess.run(["docker", "stats", "--no-stream", "--format", fmt, container_name], capture_output=True, text=True, check=True)
-        out = proc.stdout.strip()
-        # Expected: mc_name|0.13%|12.34MiB / 1GiB
-        if out:
-            parts = out.split("|", 2)
-            if len(parts) == 3:
-                name_out, cpu, mem = parts
-                cpu = cpu.strip()
-                # compute normalized cpu (percentage of total system capacity)
-                cpu_pct = None
-                cpu_normalized = None
-                try:
-                    m_cpu = re.match(r"([0-9\.]+)\s*%", cpu)
-                    if m_cpu:
-                        cpu_pct = float(m_cpu.group(1))
-                        num = os.cpu_count() or 1
-                        cpu_normalized = round(cpu_pct / num, 2)
-                except Exception:
-                    cpu_pct = None
-                    cpu_normalized = None
+        # Use one sampled read and derive total from per-core values to avoid stale 0% readings.
+        cpu_per_core_raw = psutil.cpu_percent(interval=0.2, percpu=True)
+        cpu_per_core = [round(float(v), 1) for v in cpu_per_core_raw] if cpu_per_core_raw else []
+        cpu_total = round((sum(cpu_per_core) / len(cpu_per_core)), 1) if cpu_per_core else 0.0
 
-                # parse mem into used and total if possible
-                mem_used = None
-                mem_total = None
-                m = re.match(r"([0-9\.]+\w+)\s*/\s*([0-9\.]+\w+)", mem)
-                if m:
-                    mem_used = m.group(1)
-                    mem_total = m.group(2)
+        mem = psutil.virtual_memory()
+        disk = psutil.disk_usage(os.path.abspath(os.sep))
 
-                resp = {
-                    "name": name_out,
-                    "cpu_raw": cpu,
-                    "mem": mem.strip(),
-                    "mem_used": mem_used,
-                    "mem_total": mem_total,
-                    "num_cpus": os.cpu_count() or 1,
-                }
-                if cpu_pct is not None:
-                    resp["cpu_pct"] = cpu_pct
-                if cpu_normalized is not None:
-                    resp["cpu_normalized_pct"] = cpu_normalized
-
-                return jsonify(resp)
-
-        # If we get here, unable to parse
-        return jsonify({"error": "unable_to_parse_stats", "raw": out}), 500
-
-    except subprocess.CalledProcessError as e:
-        return jsonify({"error": "docker_error", "message": str(e), "stdout": e.stdout, "stderr": e.stderr}), 500
+        return jsonify({
+            "cpu_total_pct": cpu_total,
+            "cpu_per_core_pct": cpu_per_core,
+            "memory": {
+                "total": mem.total,
+                "used": mem.used,
+                "available": mem.available,
+                "percent": round(mem.percent, 1),
+            },
+            "storage": {
+                "path": os.path.abspath(os.sep),
+                "total": disk.total,
+                "used": disk.used,
+                "free": disk.free,
+                "percent": round(disk.percent, 1),
+            },
+        })
+    except Exception as e:
+        return jsonify({"error": "system_stats_failed", "message": str(e)}), 500
 
 def list_servers():
     servers = []
