@@ -17,6 +17,21 @@ BASE_DIR = os.path.abspath("./servers")
 if not os.path.exists(BASE_DIR):
     os.makedirs(BASE_DIR)
 
+def cleanup_legacy_server_info():
+    """Remove legacy metadata files now that compose is the source of truth."""
+    for name in os.listdir(BASE_DIR):
+        server_dir = os.path.join(BASE_DIR, name)
+        if not os.path.isdir(server_dir):
+            continue
+        legacy_info = os.path.join(server_dir, "server.info")
+        if os.path.exists(legacy_info):
+            try:
+                os.remove(legacy_info)
+            except OSError:
+                pass
+
+cleanup_legacy_server_info()
+
 # --- Simple user store (file-based). For demo only. Use hashed passwords and a DB in production.
 USERS_FILE = os.path.abspath("users.json")
 
@@ -140,38 +155,50 @@ def server_exists(name):
     return os.path.exists(os.path.join(BASE_DIR, name, "docker-compose.yml"))
 
 
-def save_server_info(name, difficulty, server_type, ports, version, bedrock=False,
-                     max_players=20, enable_whitelist=True, enable_pvp=True, allow_flight=False,
-                     view_distance=20, memory=8192, motd=None,
-                     spawn_monsters=True, spawn_animals=True):
-    path = os.path.join(BASE_DIR, name, "server.info")
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(f"difficulty: {difficulty}\n")
-        f.write(f"server_type: {server_type}\n")
-        f.write(f"ports: {ports}\n")
-        f.write(f"version: {version}\n")
-        f.write(f"bedrock: {str(bool(bedrock))}\n")
-        f.write(f"max_players: {max_players}\n")
-        f.write(f"enable_whitelist: {str(bool(enable_whitelist))}\n")
-        f.write(f"enable_pvp: {str(bool(enable_pvp))}\n")
-        f.write(f"allow_flight: {str(bool(allow_flight))}\n")
-        f.write(f"view_distance: {view_distance}\n")
-        f.write(f"memory: {memory}\n")
-        f.write(f"motd: {motd or ''}\n")
-        f.write(f"spawn_monsters: {str(bool(spawn_monsters))}\n")
-        f.write(f"spawn_animals: {str(bool(spawn_animals))}\n")
+def _normalize_environment(environment):
+    """Normalize Compose environment to a dict for consistent key lookups."""
+    if isinstance(environment, dict):
+        return {str(k): str(v) for k, v in environment.items()}
+    if isinstance(environment, list):
+        env = {}
+        for item in environment:
+            if isinstance(item, str) and "=" in item:
+                k, v = item.split("=", 1)
+                env[k] = v
+        return env
+    return {}
 
 
 def get_server_info(name):
-    path = os.path.join(BASE_DIR, name, "server.info")
-    if not os.path.exists(path): return None
-    info = {}
-    with open(path, "r", encoding="utf-8") as f:
-        for line in f:
-            if ":" in line:
-                k, v = line.split(":", 1)
-                info[k.strip()] = v.strip()
-    return info
+    compose_path = os.path.join(BASE_DIR, name, "docker-compose.yml")
+    if not os.path.exists(compose_path):
+        return None
+    try:
+        with open(compose_path, "r", encoding="utf-8") as f:
+            compose = yaml.safe_load(f) or {}
+    except Exception:
+        return None
+
+    services = compose.get("services", {}) if isinstance(compose, dict) else {}
+    mc = services.get("mc", {}) if isinstance(services, dict) else {}
+    if not isinstance(mc, dict):
+        return None
+
+    environment = _normalize_environment(mc.get("environment", {}))
+    port_mappings = [str(p).strip() for p in mc.get("ports", []) if str(p).strip()]
+    ports = ",".join(port_mappings)
+
+    has_bedrock_port = any("/udp" in p.lower() and "19132:19132" in p.replace(" ", "") for p in port_mappings)
+    bedrock = has_bedrock_port or bool(environment.get("PLUGINS"))
+
+    return {
+        "difficulty": environment.get("DIFFICULTY", "?"),
+        "server_type": environment.get("TYPE", "?"),
+        "ports": ports,
+        "port_mappings": port_mappings,
+        "version": environment.get("VERSION", "LATEST"),
+        "bedrock": bedrock,
+    }
 
 def _extract_host_port(mapping):
     """Extract host port from mappings like '25565:25565' or '25565:25565/udp'."""
@@ -183,11 +210,13 @@ def _extract_host_port(mapping):
     except ValueError:
         return None
 
-def _parse_port_mappings(ports_str):
-    """Parse stored port mappings from server.info into a clean list."""
-    if not ports_str:
+def _parse_port_mappings(ports):
+    """Parse stored port mappings from compose-derived values into a clean list."""
+    if not ports:
         return []
-    return [p.strip() for p in ports_str.split(",") if p.strip()]
+    if isinstance(ports, list):
+        return [str(p).strip() for p in ports if str(p).strip()]
+    return [p.strip() for p in str(ports).split(",") if p.strip()]
 
 def used_mc_ports():
     """Return used Minecraft host ports, excluding reserved RCON/Bedrock ports."""
@@ -258,13 +287,16 @@ def list_servers():
     for name in os.listdir(BASE_DIR):
         info = get_server_info(name)
         if info:
+            bedrock_value = info.get("bedrock", False)
+            if isinstance(bedrock_value, str):
+                bedrock_value = bedrock_value.lower() == "true"
             servers.append({
                 "name": name,
                 "difficulty": info.get("difficulty", "?"),
                 "server_type": info.get("server_type", "?"),
                 "ports": info.get("ports", "?"),
                 "version": info.get("version", "LATEST"),
-                "bedrock": info.get("bedrock", "False").lower() == 'true',
+                "bedrock": bool(bedrock_value),
                 "running": is_running(name),
             })
     return servers
@@ -368,11 +400,13 @@ def create_server():
                                       view_distance=view_distance, memory=memory, motd=motd,
                                       spawn_monsters=spawn_monsters, spawn_animals=spawn_animals), f, sort_keys=False)
 
-    save_server_info(name, difficulty, server_type, ports, version, bedrock=bedrock,
-                     max_players=max_players, enable_whitelist=enable_whitelist,
-                     enable_pvp=enable_pvp, allow_flight=allow_flight,
-                     view_distance=view_distance, memory=memory, motd=motd,
-                     spawn_monsters=spawn_monsters, spawn_animals=spawn_animals)
+    # Cleanup legacy metadata file if present; compose is now the source of truth.
+    legacy_info = os.path.join(server_dir, "server.info")
+    if os.path.exists(legacy_info):
+        try:
+            os.remove(legacy_info)
+        except OSError:
+            pass
 
     try:
         run_compose(name, ["up", "-d"])
