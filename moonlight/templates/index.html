@@ -42,9 +42,9 @@
           <small><i>&nbsp;{{ s.name }}.tmaster055.com</i></small>
         </span>
         <div>
-          <button class="btn btn-sm btn-outline-light me-2" data-bs-toggle="modal" data-bs-target="#serverSettingsPlaceholderModal" title="Platzhalter für Server-Einstellungen">
+          <a class="btn btn-sm btn-outline-light me-2" href="{{ url_for('server_files', name=s.name) }}" title="Dateien verwalten">
             ⚙️
-          </button>
+          </a>
         </div>
       </h4>
       {% if s.running %}
@@ -311,24 +311,6 @@
           </div>
           <small id="statsStoragePath" class="text-muted d-block mt-1"></small>
         </div>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Schließen</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- PLACEHOLDER MODAL: Server Einstellungen -->
-<div class="modal fade" id="serverSettingsPlaceholderModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog">
-    <div class="modal-content p-3">
-      <div class="modal-header">
-        <h5 class="modal-title">Server-Einstellungen</h5>
-        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schliessen"></button>
-      </div>
-      <div class="modal-body">
-        <p class="mb-0">Platzhalter: Einstellungen pro Server folgen in einem zukunftigen Update.</p>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Schließen</button>

@@ -5,8 +5,11 @@ import shutil
 import yaml
 import json
 import psutil
+import shlex
 from dotenv import load_dotenv
 from functools import wraps
+from datetime import datetime
+from werkzeug.utils import secure_filename
 from cloudflare_helper import create_srv_record, delete_srv_record
 
 load_dotenv()
@@ -153,6 +156,66 @@ def run_compose(name, command):
 
 def server_exists(name):
     return os.path.exists(os.path.join(BASE_DIR, name, "docker-compose.yml"))
+
+def _server_data_dir(name):
+    return os.path.join(BASE_DIR, name, "data", name)
+
+def _normalize_relative_path(path_value):
+    return (path_value or "").replace("\\", "/").strip("/")
+
+def _resolve_server_data_path(name, relative_path="", must_exist=False):
+    base = os.path.abspath(_server_data_dir(name))
+    relative = _normalize_relative_path(relative_path)
+    candidate = os.path.abspath(os.path.join(base, relative)) if relative else base
+    if os.path.commonpath([base, candidate]) != base:
+        raise ValueError("Ungultiger Dateipfad.")
+    if must_exist and not os.path.exists(candidate):
+        raise FileNotFoundError("Datei oder Ordner nicht gefunden.")
+    return candidate
+
+def _relative_to_server_data(name, absolute_path):
+    base = os.path.abspath(_server_data_dir(name))
+    rel = os.path.relpath(absolute_path, base)
+    return "" if rel == "." else rel.replace("\\", "/")
+
+def _format_size(size):
+    value = float(size)
+    units = ["B", "KB", "MB", "GB", "TB"]
+    idx = 0
+    while value >= 1024 and idx < len(units) - 1:
+        value /= 1024
+        idx += 1
+    if idx == 0:
+        return f"{int(value)} {units[idx]}"
+    return f"{value:.1f} {units[idx]}"
+
+def _ensure_docker_user_ownership(name, relative_path=""):
+    """Best effort: set owner/group to the default mc container user."""
+    server_dir = os.path.join(BASE_DIR, name)
+    compose_file = os.path.join(server_dir, "docker-compose.yml")
+    if not os.path.exists(compose_file):
+        return None
+
+    rel = _normalize_relative_path(relative_path)
+    target = "/data" if not rel else f"/data/{rel}"
+    ownership_cmd = f'uid=$(id -u); gid=$(id -g); chown -R "$uid:$gid" {shlex.quote(target)}'
+
+    try:
+        subprocess.run(
+            [
+                "docker", "compose", "-f", compose_file,
+                "run", "--rm", "--no-deps", "-T", "mc",
+                "sh", "-lc", ownership_cmd,
+            ],
+            check=True,
+            cwd=server_dir,
+            capture_output=True,
+            text=True,
+        )
+        return None
+    except subprocess.CalledProcessError as e:
+        stderr = (e.stderr or "").strip()
+        return stderr or str(e)
 
 
 def _normalize_environment(environment):
@@ -340,7 +403,168 @@ def logout():
     session.pop('user', None)
     return redirect(url_for('login'))
 
+@app.route('/server/<name>/files')
+@login_required
+def server_files(name):
+    if not server_exists(name):
+        return redirect(url_for("index", message=f"Server '{name}' existiert nicht."))
+
+    os.makedirs(_server_data_dir(name), exist_ok=True)
+    message = request.args.get("message")
+    rel_path = _normalize_relative_path(request.args.get("path", ""))
+
+    try:
+        current_dir = _resolve_server_data_path(name, rel_path, must_exist=True)
+        if not os.path.isdir(current_dir):
+            return redirect(url_for("server_files", name=name, message="Gewahlter Pfad ist kein Ordner."))
+    except Exception as e:
+        return redirect(url_for("server_files", name=name, message=str(e)))
+
+    entries = []
+    for item in os.scandir(current_dir):
+        item_rel = _relative_to_server_data(name, item.path)
+        stat = item.stat()
+        entries.append({
+            "name": item.name,
+            "is_dir": item.is_dir(),
+            "size": _format_size(stat.st_size) if item.is_file() else "-",
+            "modified": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M"),
+            "path": item_rel,
+        })
+
+    entries.sort(key=lambda row: (not row["is_dir"], row["name"].lower()))
+    parent_path = _normalize_relative_path(os.path.dirname(rel_path)) if rel_path else None
+
+    return render_template(
+        "file_manager.html",
+        server_name=name,
+        entries=entries,
+        current_path=rel_path,
+        parent_path=parent_path,
+        message=message,
+        edit_mode=False,
+    )
+
+@app.route('/server/<name>/files/upload', methods=['POST'])
+@login_required
+def server_files_upload(name):
+    current_path = _normalize_relative_path(request.form.get("path", ""))
+    file_obj = request.files.get("file")
+
+    if not server_exists(name):
+        return redirect(url_for("index", message=f"Server '{name}' existiert nicht."))
+    if not file_obj or not file_obj.filename:
+        return redirect(url_for("server_files", name=name, path=current_path, message="Bitte eine Datei auswahlen."))
+
+    filename = secure_filename(file_obj.filename)
+    if not filename:
+        return redirect(url_for("server_files", name=name, path=current_path, message="Ungultiger Dateiname."))
+
+    try:
+        target_dir = _resolve_server_data_path(name, current_path, must_exist=True)
+        if not os.path.isdir(target_dir):
+            raise ValueError("Zielpfad ist kein Ordner.")
+        destination = os.path.join(target_dir, filename)
+        file_obj.save(destination)
+        ownership_error = _ensure_docker_user_ownership(name, _relative_to_server_data(name, destination))
+        msg = f"Datei '{filename}' wurde hochgeladen."
+        if ownership_error:
+            msg += f" Hinweis bei Rechte-Update: {ownership_error}"
+        return redirect(url_for("server_files", name=name, path=current_path, message=msg))
+    except Exception as e:
+        return redirect(url_for("server_files", name=name, path=current_path, message=f"Upload-Fehler: {e}"))
+
+@app.route('/server/<name>/files/delete', methods=['POST'])
+@login_required
+def server_files_delete(name):
+    current_path = _normalize_relative_path(request.form.get("path", ""))
+    target_rel = _normalize_relative_path(request.form.get("target", ""))
+
+    if not server_exists(name):
+        return redirect(url_for("index", message=f"Server '{name}' existiert nicht."))
+    if not target_rel:
+        return redirect(url_for("server_files", name=name, path=current_path, message="Kein Ziel zum Loschen angegeben."))
+
+    try:
+        target_abs = _resolve_server_data_path(name, target_rel, must_exist=True)
+        if os.path.isdir(target_abs):
+            shutil.rmtree(target_abs)
+        else:
+            os.remove(target_abs)
+
+        parent_rel = _normalize_relative_path(os.path.dirname(target_rel))
+        ownership_error = _ensure_docker_user_ownership(name, parent_rel)
+        msg = f"'{os.path.basename(target_abs)}' wurde geloscht."
+        if ownership_error:
+            msg += f" Hinweis bei Rechte-Update: {ownership_error}"
+        return redirect(url_for("server_files", name=name, path=current_path, message=msg))
+    except Exception as e:
+        return redirect(url_for("server_files", name=name, path=current_path, message=f"Losch-Fehler: {e}"))
+
+@app.route('/server/<name>/files/edit', methods=['GET', 'POST'])
+@login_required
+def server_files_edit(name):
+    file_path = _normalize_relative_path(request.values.get("file", ""))
+
+    if not server_exists(name):
+        return redirect(url_for("index", message=f"Server '{name}' existiert nicht."))
+    if not file_path:
+        return redirect(url_for("server_files", name=name, message="Keine Datei zum Bearbeiten ausgewahlt."))
+
+    try:
+        file_abs = _resolve_server_data_path(name, file_path, must_exist=True)
+        if os.path.isdir(file_abs):
+            return redirect(url_for("server_files", name=name, message="Ordner konnen nicht direkt bearbeitet werden."))
+    except Exception as e:
+        return redirect(url_for("server_files", name=name, message=f"Fehler beim Offnen: {e}"))
+
+    parent_path = _normalize_relative_path(os.path.dirname(file_path))
+
+    if request.method == "POST":
+        content = request.form.get("content", "")
+        try:
+            with open(file_abs, "w", encoding="utf-8") as f:
+                f.write(content)
+            ownership_error = _ensure_docker_user_ownership(name, file_path)
+            msg = f"Datei '{os.path.basename(file_path)}' wurde gespeichert."
+            if ownership_error:
+                msg += f" Hinweis bei Rechte-Update: {ownership_error}"
+            return redirect(url_for("server_files", name=name, path=parent_path, message=msg))
+        except Exception as e:
+            return render_template(
+                "file_manager.html",
+                server_name=name,
+                entries=[],
+                current_path=parent_path,
+                parent_path=_normalize_relative_path(os.path.dirname(parent_path)) if parent_path else None,
+                message=f"Speicher-Fehler: {e}",
+                edit_mode=True,
+                edit_file=file_path,
+                edit_content=content,
+            )
+
+    try:
+        with open(file_abs, "r", encoding="utf-8") as f:
+            file_content = f.read()
+    except UnicodeDecodeError:
+        return redirect(url_for("server_files", name=name, path=parent_path, message="Datei ist nicht UTF-8 und kann nicht im Editor angezeigt werden."))
+    except Exception as e:
+        return redirect(url_for("server_files", name=name, path=parent_path, message=f"Fehler beim Lesen: {e}"))
+
+    return render_template(
+        "file_manager.html",
+        server_name=name,
+        entries=[],
+        current_path=parent_path,
+        parent_path=_normalize_relative_path(os.path.dirname(parent_path)) if parent_path else None,
+        message=request.args.get("message"),
+        edit_mode=True,
+        edit_file=file_path,
+        edit_content=file_content,
+    )
+
 @app.route("/create", methods=["POST"])
+@login_required
 def create_server():
     name = request.form["name"]
     difficulty = request.form["difficulty"]
@@ -438,6 +662,7 @@ def create_server():
     return redirect(url_for("index", message=msg))
 
 @app.route("/action", methods=["POST"])
+@login_required
 def server_action():
     name = request.form["name"]
     action = request.form["action"]
