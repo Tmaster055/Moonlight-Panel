@@ -196,6 +196,7 @@ def get_server_info(name):
         "server_type": environment.get("TYPE", "?"),
         "ports": ports,
         "port_mappings": port_mappings,
+        "mc_port": _extract_mc_port(port_mappings),
         "version": environment.get("VERSION", "LATEST"),
         "bedrock": bedrock,
     }
@@ -217,6 +218,19 @@ def _parse_port_mappings(ports):
     if isinstance(ports, list):
         return [str(p).strip() for p in ports if str(p).strip()]
     return [p.strip() for p in str(ports).split(",") if p.strip()]
+
+def _extract_mc_port(port_mappings):
+    """Return first TCP Minecraft host port, excluding RCON and Bedrock ports."""
+    for mapping in _parse_port_mappings(port_mappings):
+        if "/udp" in mapping.lower():
+            continue
+        port = _extract_host_port(mapping)
+        if port is None:
+            continue
+        if port in (25575, 19132):
+            continue
+        return port
+    return None
 
 def used_mc_ports():
     """Return used Minecraft host ports, excluding reserved RCON/Bedrock ports."""
@@ -295,6 +309,7 @@ def list_servers():
                 "difficulty": info.get("difficulty", "?"),
                 "server_type": info.get("server_type", "?"),
                 "ports": info.get("ports", "?"),
+                "mc_port": info.get("mc_port"),
                 "version": info.get("version", "LATEST"),
                 "bedrock": bool(bedrock_value),
                 "running": is_running(name),

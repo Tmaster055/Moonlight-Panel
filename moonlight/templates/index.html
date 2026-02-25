@@ -56,7 +56,7 @@
       <p>
         <strong>Typ:</strong> {{ s.server_type }} |
         <strong>Version:</strong> {{ s.version }} |
-        <strong>Ports:</strong> {{ s.ports }}
+        <strong>Port:</strong> {{ s.mc_port if s.mc_port else "?" }}
       </p>
       <form method="POST" action="/action" class="d-inline">
         <input type="hidden" name="name" value="{{ s.name }}">
@@ -353,7 +353,7 @@
   var statsModal = document.getElementById('statsModal');
   if (statsModal) {
     var statsInterval = null;
-    var STATS_REFRESH_MS = 500;
+    var STATS_REFRESH_MS = 1000;
 
     function renderCoreList(cores) {
       var host = document.getElementById('statsCoreList');
