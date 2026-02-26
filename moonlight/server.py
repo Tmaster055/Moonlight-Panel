@@ -326,6 +326,29 @@ def is_running(name):
     result = subprocess.run(["docker", "ps", "--filter", f"name=^{c}$", "--format", "{{.Names}}"], capture_output=True, text=True)
     return bool(result.stdout.strip())
 
+def get_server_logs(name, tail=250):
+    server_dir = os.path.join(BASE_DIR, name)
+    compose_file = os.path.join(server_dir, "docker-compose.yml")
+    if not os.path.exists(compose_file):
+        raise FileNotFoundError(f"Server '{name}' existiert nicht.")
+
+    # Read-only access to current/past logs of the Minecraft service.
+    cmd = [
+        "docker", "compose", "-f", compose_file,
+        "logs", "--no-color", "--tail", str(tail), "mc"
+    ]
+    result = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        cwd=server_dir,
+        timeout=15,
+    )
+    if result.returncode != 0:
+        error_msg = (result.stderr or result.stdout or "").strip()
+        raise RuntimeError(error_msg or "Logs konnten nicht gelesen werden.")
+    return (result.stdout or "").rstrip()
+
 @app.route('/system-stats')
 @login_required
 def system_stats():
@@ -444,6 +467,37 @@ def server_files(name):
         message=message,
         edit_mode=False,
     )
+
+@app.route('/server/<name>/console')
+@login_required
+def server_console(name):
+    if not server_exists(name):
+        return redirect(url_for("index", message=f"Server '{name}' existiert nicht."))
+
+    logs = ""
+    error = None
+    try:
+        logs = get_server_logs(name)
+    except Exception as e:
+        error = str(e)
+
+    return render_template(
+        "server_console.html",
+        server_name=name,
+        initial_logs=logs,
+        error=error,
+    )
+
+@app.route('/server/<name>/logs')
+@login_required
+def server_logs(name):
+    if not server_exists(name):
+        return jsonify({"error": "server_not_found", "message": f"Server '{name}' existiert nicht."}), 404
+    try:
+        logs = get_server_logs(name)
+        return jsonify({"logs": logs})
+    except Exception as e:
+        return jsonify({"error": "logs_failed", "message": str(e)}), 500
 
 @app.route('/server/<name>/files/upload', methods=['POST'])
 @login_required

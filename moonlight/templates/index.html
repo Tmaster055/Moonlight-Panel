@@ -41,10 +41,14 @@
           {{ s.name }}
           <small><i>&nbsp;{{ s.name }}.tmaster055.com</i></small>
         </span>
-        <div>
-          <a class="btn btn-sm btn-outline-light me-2" href="{{ url_for('server_files', name=s.name) }}" title="Dateien verwalten">
+        <div class="dropdown">
+          <button class="btn btn-sm btn-outline-light dropdown-toggle me-2" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Einstellungen">
             ⚙️
-          </a>
+          </button>
+          <ul class="dropdown-menu dropdown-menu-dark">
+            <li><a class="dropdown-item" href="{{ url_for('server_files', name=s.name) }}">Dateien</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('server_console', name=s.name) }}">Konsole (nur Lesen)</a></li>
+          </ul>
         </div>
       </h4>
       {% if s.running %}

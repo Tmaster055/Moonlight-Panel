@@ -118,3 +118,18 @@ h1, h2 {
   background-color: #7a5af8;
   border-color: #7a5af8;
 }
+
+.console-output {
+  margin: 0;
+  padding: 14px;
+  min-height: 520px;
+  max-height: 70vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: Consolas, Monaco, "Courier New", monospace;
+  font-size: 0.87rem;
+  line-height: 1.35;
+  background-color: #160f22;
+  color: #e8dcff;
+}
