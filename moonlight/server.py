@@ -67,7 +67,7 @@ def login_required(f):
 # --- Backend Logik ---
 def create_compose_yaml(name, difficulty, server_type, ports, version, bedrock=False,
                         max_players=20, enable_whitelist=True, enable_pvp=True, allow_flight=False,
-                        view_distance=20, memory=8192, motd=None,
+                        view_distance=20, memory=8192, motd=None, seed=None,
                         spawn_monsters=True, spawn_animals=True):
     port_list = [p.strip() for p in ports.split(",") if p.strip()]
     if not port_list:
@@ -99,6 +99,8 @@ def create_compose_yaml(name, difficulty, server_type, ports, version, bedrock=F
         "SPAWN_MONSTERS": "true" if spawn_monsters else "false",
         "SPAWN_ANIMALS": "true" if spawn_animals else "false"
     }
+    if seed is not None and str(seed).strip():
+        environment["SEED"] = str(seed)
 
     # Always use OPS from .env if available
     ops_list = os.environ.get("OPS")
@@ -634,6 +636,7 @@ def create_server():
     view_distance = int(request.form.get("view_distance", 20))
     memory = int(request.form.get("memory", 8192))
     motd = request.form.get("motd", "")
+    seed = request.form.get("seed", "").strip()
     spawn_monsters = request.form.get('spawn_monsters') == 'on'
     spawn_animals = request.form.get('spawn_animals') == 'on'
 
@@ -690,7 +693,7 @@ def create_server():
         yaml.dump(create_compose_yaml(name, difficulty, server_type, ports, version, bedrock=bedrock,
                                       max_players=max_players, enable_whitelist=enable_whitelist,
                                       enable_pvp=enable_pvp, allow_flight=allow_flight,
-                                      view_distance=view_distance, memory=memory, motd=motd,
+                                      view_distance=view_distance, memory=memory, motd=motd, seed=seed,
                                       spawn_monsters=spawn_monsters, spawn_animals=spawn_animals), f, sort_keys=False)
 
     # Cleanup legacy metadata file if present; compose is now the source of truth.
