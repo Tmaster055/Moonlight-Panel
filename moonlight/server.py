@@ -20,6 +20,10 @@ BASE_DIR = os.path.abspath("./servers")
 if not os.path.exists(BASE_DIR):
     os.makedirs(BASE_DIR)
 
+MAX_RUNNING_SERVERS = 4
+MIN_MEMORY_MB = 1024
+MAX_MEMORY_MB = 8192
+
 def cleanup_legacy_server_info():
     """Remove legacy metadata files now that compose is the source of truth."""
     for name in os.listdir(BASE_DIR):
@@ -81,6 +85,7 @@ def create_compose_yaml(name, difficulty, server_type, ports, version, bedrock=F
         "EULA": "TRUE",
         "SERVER_PORT": server_port,
         "RCON_CMDS_STARTUP": "gamerule players_sleeping_percentage 0",
+        "SPAWN_PROTECTION": "0",
         "VIEW_DISTANCE": str(view_distance),
         "MOTD": motd or os.environ.get("SERVER_MOTD"),
         "ICON": os.environ.get("SERVER_ICON"),
@@ -634,7 +639,12 @@ def create_server():
     enable_pvp = request.form.get('enable_pvp') == 'on'
     allow_flight = request.form.get('allow_flight') == 'on'
     view_distance = int(request.form.get("view_distance", 20))
-    memory = int(request.form.get("memory", 8192))
+    try:
+        memory = int(request.form.get("memory", MAX_MEMORY_MB))
+    except ValueError:
+        return redirect(url_for("index", message="Fehler: Ungültiger RAM-Wert. Bitte gib eine Zahl ein."))
+    if memory < MIN_MEMORY_MB or memory > MAX_MEMORY_MB:
+        return redirect(url_for("index", message=f"Fehler: RAM muss zwischen {MIN_MEMORY_MB} und {MAX_MEMORY_MB} MB liegen."))
     motd = request.form.get("motd", "")
     seed = request.form.get("seed", "").strip()
     spawn_monsters = request.form.get('spawn_monsters') == 'on'
@@ -642,8 +652,9 @@ def create_server():
 
     # Prüfen, ob schon ein Server läuft
     running_servers = [s for s in list_servers() if s["running"]]
-    if running_servers:
-        return redirect(url_for("index", message=f"❌ Es läuft bereits der Server '{running_servers[0]['name']}'. Es kann immer nur ein Server gleichzeitig laufen."))
+    if len(running_servers) >= MAX_RUNNING_SERVERS:
+        running_names = ", ".join(s["name"] for s in running_servers)
+        return redirect(url_for("index", message=f"❌ Es laufen bereits {len(running_servers)} Server ({running_names}). Maximal {MAX_RUNNING_SERVERS} Server gleichzeitig sind erlaubt."))
 
     if server_exists(name):
         return redirect(url_for("index", message=f"Server '{name}' existiert bereits."))
@@ -725,10 +736,11 @@ def server_action():
     action = request.form["action"]
     try:
         if action == "start" or action == "restart":
-            # Prüfen, ob bereits ein anderer Server läuft
-            running_servers = [s for s in list_servers() if s["running"] and s["name"] != name]
-            if running_servers:
-                return redirect(url_for("index", message=f"❌ Es läuft bereits der Server '{running_servers[0]['name']}'. Es kann immer nur ein Server gleichzeitig laufen."))
+            running_servers = [s for s in list_servers() if s["running"]]
+            target_is_running = any(s["name"] == name for s in running_servers)
+            if not target_is_running and len(running_servers) >= MAX_RUNNING_SERVERS:
+                running_names = ", ".join(s["name"] for s in running_servers)
+                return redirect(url_for("index", message=f"❌ Es laufen bereits {len(running_servers)} Server ({running_names}). Maximal {MAX_RUNNING_SERVERS} Server gleichzeitig sind erlaubt."))
 
             if action == "start":
                 run_compose(name, ["up", "-d"])
