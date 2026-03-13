@@ -217,6 +217,40 @@ def _ensure_docker_user_ownership(name, relative_path=""):
         return stderr or str(e)
 
 
+def _ensure_host_writable(name, relative_path=""):
+    """Best effort: chown data to the host user so uploads can write to bind mounts."""
+    if not hasattr(os, "getuid") or not hasattr(os, "getgid"):
+        return None
+
+    server_dir = os.path.join(BASE_DIR, name)
+    compose_file = os.path.join(server_dir, "docker-compose.yml")
+    if not os.path.exists(compose_file):
+        return None
+
+    rel = _normalize_relative_path(relative_path)
+    target = "/data" if not rel else f"/data/{rel}"
+    uid = os.getuid()
+    gid = os.getgid()
+    ownership_cmd = f'chown -R {uid}:{gid} {shlex.quote(target)}'
+
+    try:
+        subprocess.run(
+            [
+                "docker", "compose", "-f", compose_file,
+                "run", "--rm", "--no-deps", "-T", "mc",
+                "sh", "-lc", ownership_cmd,
+            ],
+            check=True,
+            cwd=server_dir,
+            capture_output=True,
+            text=True,
+        )
+        return None
+    except subprocess.CalledProcessError as e:
+        stderr = (e.stderr or "").strip()
+        return stderr or str(e)
+
+
 def _normalize_environment(environment):
     """Normalize Compose environment to a dict for consistent key lookups."""
     if isinstance(environment, dict):
@@ -503,6 +537,7 @@ def server_logs(name):
 def server_files_upload(name):
     current_path = _normalize_relative_path(request.form.get("path", ""))
     file_obj = request.files.get("file")
+    ownership_hint = None
 
     if not server_exists(name):
         return redirect(url_for("index", message=f"Server '{name}' existiert nicht."))
@@ -517,14 +552,19 @@ def server_files_upload(name):
         target_dir = _resolve_server_data_path(name, current_path, must_exist=True)
         if not os.path.isdir(target_dir):
             raise ValueError("Zielpfad ist kein Ordner.")
+        ownership_hint = _ensure_host_writable(name, current_path)
         destination = os.path.join(target_dir, filename)
         file_obj.save(destination)
         ownership_error = _ensure_docker_user_ownership(name, _relative_to_server_data(name, destination))
         msg = f"Datei '{filename}' wurde hochgeladen."
+        if ownership_hint:
+            msg += f" Hinweis bei Rechte-Update: {ownership_hint}"
         if ownership_error:
-            msg += f" Hinweis bei Rechte-Update: {ownership_error}"
+            msg += f" Hinweis bei Container-Rechte-Update: {ownership_error}"
         return redirect(url_for("server_files", name=name, path=current_path, message=msg))
     except Exception as e:
+        if ownership_hint:
+            return redirect(url_for("server_files", name=name, path=current_path, message=f"Upload-Fehler: {e}. Rechte-Update: {ownership_hint}"))
         return redirect(url_for("server_files", name=name, path=current_path, message=f"Upload-Fehler: {e}"))
 
 @app.route('/server/<name>/files/delete', methods=['POST'])
