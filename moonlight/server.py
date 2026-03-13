@@ -323,7 +323,7 @@ def _extract_mc_port(port_mappings):
         port = _extract_host_port(mapping)
         if port is None:
             continue
-        if port in (19132):
+        if port == 19132:
             continue
         return port
     return None
@@ -340,7 +340,7 @@ def used_mc_ports():
             if port is None:
                 continue
             # Ignore reserved non-MC ports
-            if port in (19132):
+            if port == 19132:
                 continue
             used.add(port)
     return used
