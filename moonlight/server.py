@@ -237,7 +237,9 @@ def _ensure_host_writable(name, relative_path=""):
         subprocess.run(
             [
                 "docker", "compose", "-f", compose_file,
-                "run", "--rm", "--no-deps", "-T", "mc",
+                "run", "--rm", "--no-deps", "-T",
+                "--user", "0:0",
+                "mc",
                 "sh", "-lc", ownership_cmd,
             ],
             check=True,
@@ -248,7 +250,25 @@ def _ensure_host_writable(name, relative_path=""):
         return None
     except subprocess.CalledProcessError as e:
         stderr = (e.stderr or "").strip()
-        return stderr or str(e)
+        # As a fallback, try to relax permissions instead of chown.
+        try:
+            subprocess.run(
+                [
+                    "docker", "compose", "-f", compose_file,
+                    "run", "--rm", "--no-deps", "-T",
+                    "--user", "0:0",
+                    "mc",
+                    "sh", "-lc", f"chmod -R a+rwX {shlex.quote(target)}",
+                ],
+                check=True,
+                cwd=server_dir,
+                capture_output=True,
+                text=True,
+            )
+            return None
+        except subprocess.CalledProcessError as e2:
+            stderr2 = (e2.stderr or "").strip()
+            return stderr2 or stderr or str(e2) or str(e)
 
 
 def _normalize_environment(environment):
