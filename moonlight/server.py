@@ -76,9 +76,6 @@ def create_compose_yaml(name, difficulty, server_type, ports, version, bedrock=F
     port_list = [p.strip() for p in ports.split(",") if p.strip()]
     if not port_list:
         port_list = ["25565:25565"]
-    if not any(p.startswith("25575:") for p in port_list):
-        port_list.append("25575:25575")
-
     server_port = port_list[0].split(":")[0]
 
     environment = {
@@ -95,9 +92,6 @@ def create_compose_yaml(name, difficulty, server_type, ports, version, bedrock=F
         "MEMORY": f"{memory}M",
         "TZ": "Europe/Vienna",
         "DIFFICULTY": difficulty,
-        "ENABLE_RCON": "true",
-        "RCON_PASSWORD": "123",
-        "RCON_PORT": "25575",
         "MAX_PLAYERS": str(max_players),
         "PVP": "true" if enable_pvp else "false",
         "ALLOW_FLIGHT": "true" if allow_flight else "false",
@@ -138,8 +132,6 @@ def create_compose_yaml(name, difficulty, server_type, ports, version, bedrock=F
                     "BACKUP_INTERVAL": "48h",
                     "BACKUP_RETENTION_DAYS": "6",
                     "RCON_HOST": "mc",
-                    "RCON_PORT": "25575",
-                    "RCON_PASSWORD": "123",
                     "PAUSE_IF_PLAYERS_ONLINE": "true",
                     "INITIAL_DELAY": 0
                 },
@@ -290,20 +282,20 @@ def _parse_port_mappings(ports):
     return [p.strip() for p in str(ports).split(",") if p.strip()]
 
 def _extract_mc_port(port_mappings):
-    """Return first TCP Minecraft host port, excluding RCON and Bedrock ports."""
+    """Return first TCP Minecraft host port, excluding Bedrock ports."""
     for mapping in _parse_port_mappings(port_mappings):
         if "/udp" in mapping.lower():
             continue
         port = _extract_host_port(mapping)
         if port is None:
             continue
-        if port in (25575, 19132):
+        if port in (19132):
             continue
         return port
     return None
 
 def used_mc_ports():
-    """Return used Minecraft host ports, excluding reserved RCON/Bedrock ports."""
+    """Return used Minecraft host ports, excluding reserved Bedrock ports."""
     used = set()
     for server in list_servers():
         for mapping in _parse_port_mappings(server.get("ports", "")):
@@ -314,7 +306,7 @@ def used_mc_ports():
             if port is None:
                 continue
             # Ignore reserved non-MC ports
-            if port in (25575, 19132):
+            if port in (19132):
                 continue
             used.add(port)
     return used
@@ -677,7 +669,6 @@ def create_server():
     # If bedrock support is requested for PAPER/FOLIA, add the UDP port mapping for Bedrock (19132)
     if bedrock and server_type in ('PAPER', 'FOLIA'):
         mapped_ports.append('19132:19132/udp')
-    mapped_ports.append('25575:25575')
     ports = ",".join(mapped_ports)
 
     # Determine SRV port: choose the first TCP host port mapping (skip /udp mappings)
